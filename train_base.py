@@ -1,23 +1,24 @@
 # -*- coding: utf-8 -*-
-# Time    : 2023/12/12 20:30
-# Author  : fanc
-# File    : train.py
-
-# -*- coding: utf-8 -*-
 # Time    : 2023/10/30 20:35
 # Author  : fanc
 # File    : train_base.py
 
 import warnings
 warnings.filterwarnings("ignore")
-import logging
+import logging  # 引入logging模块
 import os.path
+import time
 import os
+import math
 import argparse
+
+import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
+import torch.optim.lr_scheduler as lr_scheduler
 from tqdm import tqdm
 import torch
 from torch.optim.lr_scheduler import ExponentialLR
+import torch.nn as nn
 from src.dataloader import split_data, my_dataloader
 from torch.nn.parallel import DataParallel
 from src.resnet import generate_model
@@ -25,7 +26,54 @@ import time
 import json
 import torch.nn.functional as F
 from utils import AverageMeter as AverageMeter
-from utils import calculate_accuracy
+from utils import calculate_acc_sigmoid
+from sklearn.metrics import precision_score, recall_score, f1_score
+
+
+def load_model(model, checkpoint_path, multi_gpu=False):
+    """
+    通用加载模型函数。
+    :param model: 要加载状态字典的PyTorch模型。
+    :param checkpoint_path: 模型权重文件的路径。
+    :param multi_gpu: 布尔值，指示是否使用多GPU加载模型。
+    :return: 加载了权重的模型。
+    """
+    # 加载状态字典
+    pretrain = torch.load(checkpoint_path)
+    if 'model_state_dict' in pretrain.keys():
+        state_dict = pretrain['model_state_dict']
+    else:
+        state_dict = pretrain['state_dict']
+    # 检查是否为多卡模型保存的状态字典
+    if list(state_dict.keys())[0].startswith('module.'):
+        # 移除'module.'前缀（多卡到单卡）
+        state_dict = {k[len("module."):]: v for k, v in state_dict.items()}
+    # 加载状态字典
+    model.load_state_dict(state_dict)
+    # 如果需要在多GPU上运行模型
+    if multi_gpu:
+        # 使用DataParallel封装模型
+        model = nn.DataParallel(model)
+
+    return model
+
+
+def calculate_metrics(pred_logits, labels):
+    _, preds = torch.max(pred_logits, dim=1)
+
+    # 计算准确率
+    correct_preds = torch.eq(preds, labels).float().sum()
+    accuracy = correct_preds / labels.size(0)
+
+    # 移到CPU并转换为numpy用于sklearn
+    preds = preds.cpu().numpy()
+    labels = labels.cpu().numpy()
+
+    precision = precision_score(labels, preds, average='macro')
+    recall = recall_score(labels, preds, average='macro')
+    f1 = f1_score(labels, preds, average='macro')
+
+    return precision, recall, f1, accuracy.item()
 
 class Trainer:
     def __init__(self, model, optimizer, device, train_loader, test_loader, scheduler, args, summaryWriter):
@@ -39,7 +87,7 @@ class Trainer:
         self.epoch = 0
         self.best_acc = 0
         self.args = args
-        self.load_model()
+        self.self_model()
         self.loss_function = torch.nn.CrossEntropyLoss()
         self.summaryWriter = summaryWriter
 
@@ -50,7 +98,7 @@ class Trainer:
                 self.epoch = epoch+1
                 self.train_one_epoch()
                 self.num_params = sum([param.nelement() for param in self.model.parameters()])
-                self.scheduler.step()
+                # self.scheduler.step()
                 end = time.time()
                 print("Epoch: {}, train time: {}".format(epoch, end - start))
                 if epoch % 1 == 0:
@@ -61,19 +109,31 @@ class Trainer:
             data_time = AverageMeter()
             losses = AverageMeter()
             accuracies = AverageMeter()
+            precisions = AverageMeter()
+            recalls = AverageMeter()
+            f1_scores = AverageMeter()
             end_time = time.time()
+            output_result = []
+            import pandas as pd
             with torch.no_grad():
-                for inx, (x, label) in tqdm(enumerate(self.train_loader), total=len(self.train_loader)):
+                for inx, (x, label) in tqdm(enumerate(self.test_loader), total=len(self.test_loader)):
                     data_time.update(time.time() - end_time)
+                    # x = torch.mul(x, mask)
                     x = x.to(self.device)
                     label = label.to(self.device)
                     out = self.model(x)
-                    pred = F.softmax(out, dim=1)
-                    print('out:{}, sigmoid out:{}, label:{}'.format(out, pred, label))
-                    acc = calculate_accuracy(pred, label)
                     loss = self.loss_function(out, label)
+                    # for i in range(pred.size(0)):
+                    #     output_result.append({'pred': pred[i], 'label': label[i], 'id': f'{inx}_{i}'})
+                    precision, recall, f1, accuracy = calculate_metrics(out, label)
+
+                    # update
                     losses.update(loss.item(), x.size(0))
-                    accuracies.update(acc, x.size(0))
+                    accuracies.update(accuracy, x.size(0))
+                    precisions.update(precision, x.size(0))
+                    recalls.update(recall, x.size(0))
+                    f1_scores.update(f1, x.size(0))
+
                     batch_time.update(time.time() - end_time)
                     end_time = time.time()
                     print('Epoch: [{0}][{1}/{2}]\t'
@@ -89,55 +149,49 @@ class Trainer:
                             data_time=data_time,
                             loss=losses,
                             acc=accuracies,
-                            out=out,pred=pred, label=label))
+                            out='out',pred='pred', label='label'))
+                    print(f'Precision {precisions.val:.3f} ({precisions.avg:.3f})\t'
+                          f'Recall {recalls.val:.3f} ({recalls.avg:.3f})\t'
+                          f'F1 Score {f1_scores.val:.3f} ({f1_scores.avg:.3f})')
+                # df = pd.DataFrame(output_result)
+                # df.to_csv('output.csv', index=False)
 
-    def load_model(self):
+    def self_model(self):
         if self.args.MODEL_WEIGHT:
-            pretrain = torch.load(self.args.MODEL_WEIGHT)
-            if 'model_state_dict' in pretrain.keys():
-                state_dict = 'model_state_dict'
-            else:
-                state_dict = 'state_dict'
-            pre_dict = pretrain[state_dict]
-            model_dict = self.model.state_dict()
-            for m in model_dict.keys():
-                if 'module' in m:
-                    pass
-                else:
-                    old_key = list(pre_dict.keys())
-                    for k in old_key:
-                        if 'module' in k:
-                            pre_dict[k.replace('module.', '')] = pre_dict[k]
-                            pre_dict.pop(k)
-                break
-            # print(model_dict.keys())
-            # print(pre_dict.keys())
-            pretrained_dict = {k: v for k, v in pre_dict.items() if
-                               k in model_dict and model_dict[k].size() == v.size()}
-            model_dict.update(pretrained_dict)
-            self.model.load_state_dict(model_dict)
-            print(f'pretrain weight can use : {len(pretrained_dict)} / {len(model_dict)}')
+            self.model = load_model(model=self.model,
+                            checkpoint_path=self.args.MODEL_WEIGHT,
+                            multi_gpu=torch.cuda.device_count() > 1)
             print('load model weight success!')
+        self.model.to(self.device)
 
     def evaluate(self):
         self.model.eval()
+
         batch_time = AverageMeter()
         data_time = AverageMeter()
         losses = AverageMeter()
-        accuracies = AverageMeter()
         end_time = time.time()
+        accuracies = AverageMeter()
+        precisions = AverageMeter()
+        recalls = AverageMeter()
+        f1_scores = AverageMeter()
 
         with torch.no_grad():
             for inx, (x, label) in tqdm(enumerate(self.test_loader), total=len(self.test_loader)):
                 data_time.update(time.time() - end_time)
+                # x = torch.mul(x, mask)
                 x = x.to(self.device)
                 label = label.to(self.device)
                 out = self.model(x)
                 loss = self.loss_function(out, label)
-                pred = F.softmax(out, dim=1)
-                acc = calculate_accuracy(pred, label)
+                precision, recall, f1, accuracy = calculate_metrics(out, label)
+                # update
                 losses.update(loss.item(), x.size(0))
-                accuracies.update(acc, x.size(0))
+                accuracies.update(accuracy, x.size(0))
+                precisions.update(precision, x.size(0))
+                recalls.update(recall, x.size(0))
+                f1_scores.update(f1, x.size(0))
+
                 batch_time.update(time.time() - end_time)
                 end_time = time.time()
 
@@ -153,9 +207,15 @@ class Trainer:
                     data_time=data_time,
                     loss=losses,
                     acc=accuracies))
-
+                print(f'Precision {precisions.val:.3f} ({precisions.avg:.3f})\t'
+                      f'Recall {recalls.val:.3f} ({recalls.avg:.3f})\t'
+                      f'F1 Score {f1_scores.val:.3f} ({f1_scores.avg:.3f})')
+            self.scheduler.step(losses.avg)
             self.summaryWriter.add_scalars("Loss", {'Test': losses.avg}, self.epoch)
             self.summaryWriter.add_scalars("Acc", {'Test': accuracies.avg}, self.epoch)
+            self.summaryWriter.add_scalars("Precision", {'Test': precisions.avg}, self.epoch)
+            self.summaryWriter.add_scalars("Recall", {'Test': recalls.avg}, self.epoch)
+            self.summaryWriter.add_scalars("F1 Score", {'Test': f1_scores.avg}, self.epoch)
 
 
 
@@ -169,7 +229,6 @@ class Trainer:
                     'epoch': self.epoch
                 }
                 torch.save(checkpoint, os.path.join(self.args.save_dir, 'checkpoint-%d.pth' % self.epoch))
-                logger.logger.info('save model %d successed......\n'%self.epoch)
 
             if self.best_acc < accuracies.avg:
                 self.best_acc = accuracies.avg
@@ -182,25 +241,39 @@ class Trainer:
                     'epoch': self.epoch
                 }
                 torch.save(checkpoint, os.path.join(self.args.save_dir, 'best_checkpoint.pth'))
-                logger.logger.info('save best model successed......\n')
+
 
     def train_one_epoch(self):
         batch_time = AverageMeter()
         data_time = AverageMeter()
         losses = AverageMeter()
         accuracies = AverageMeter()
+        precisions = AverageMeter()
+        recalls = AverageMeter()
+        f1_scores = AverageMeter()
         self.model.train()
         end_time = time.time()
         for inx, (x, label) in tqdm(enumerate(self.train_loader), total=len(self.train_loader)):
             data_time.update(time.time() - end_time)
+            # input stone
+            # x = torch.mul(x, mask)
             x = x.to(self.device)
             label = label.to(self.device)
             out = self.model(x)
+
             loss = self.loss_function(out, label)
-            pred = F.softmax(out, dim=1)
-            acc = calculate_accuracy(pred, label)
+            precision, recall, f1, accuracy = calculate_metrics(out, label)
+            # update
             losses.update(loss.item(), x.size(0))
-            accuracies.update(acc, x.size(0))
+            accuracies.update(accuracy, x.size(0))
+            precisions.update(precision, x.size(0))
+            recalls.update(recall, x.size(0))
+            f1_scores.update(f1, x.size(0))
+
+            batch_time.update(time.time() - end_time)
+            losses.update(loss.item(), x.size(0))
+            end_time = time.time()
+
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
@@ -217,36 +290,56 @@ class Trainer:
                                                              data_time=data_time,
                                                              loss=losses,
                                                              acc=accuracies))
+            print(f'Precision {precisions.val:.3f} ({precisions.avg:.3f})\t'
+                  f'Recall {recalls.val:.3f} ({recalls.avg:.3f})\t'
+                  f'F1 Score {f1_scores.val:.3f} ({f1_scores.avg:.3f})')
+
         self.summaryWriter.add_scalars("Loss", {'Train': losses.avg}, self.epoch)
         self.summaryWriter.add_scalars("Acc", {'Train': accuracies.avg}, self.epoch)
-        # self.summaryWriter.add_scalars("lr", self.args.lr, self.epoch)
+        self.summaryWriter.add_scalars("Precision", {'Train': precisions.avg}, self.epoch)
+        self.summaryWriter.add_scalars("Recall", {'Train': recalls.avg}, self.epoch)
+        self.summaryWriter.add_scalars("F1 Score", {'Train': f1_scores.avg}, self.epoch)
         self.summaryWriter.add_scalar('Lr', self.optimizer.param_groups[0]['lr'], self.epoch)
-        # print(f'train epoch:{self.epoch}/{self.epochs}, Loss:{per_epoch_loss / len(self.train_loader)}, acc:{num_correct / total_step}')
 
 def makedirs(path):
     if not os.path.exists(path):
         os.makedirs(path)
     return path
 
-def main(args, logger, path):
+def main(args, path):
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print("can use {} gpus".format(torch.cuda.device_count()))
     print(device)
     model = generate_model(model_depth=args.rd, n_classes=args.num_classes)
 
-    if torch.cuda.device_count() > 1:
-        model = DataParallel(model)
-    model.to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.0001, betas=(0.9, 0.99))
-    scheduler = ExponentialLR(optimizer, gamma=0.99)
-    data_dir = args.input_path
-    train_infos, val_infos = split_data(data_dir)
-    train_loader = my_dataloader(data_dir, train_infos, batch_size=args.batch_size, input_size=args.input_size)
-    val_loader = my_dataloader(data_dir, val_infos, batch_size=args.batch_size, input_size=args.input_size)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.01, betas=(0.9, 0.99))
+    # scheduler = ExponentialLR(optimizer, gamma=0.99)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10, verbose=True)
+
+    # data
+    with open('/mntcephfs/lab_data/wangcm/fan/code/LungCancerDC/configs/dataset.json', 'r', encoding='utf-8') as f:
+        dataset = json.load(f)
+    data_dir = dataset['data_dir']
+    infos_name = dataset['infos_name']
+    img_dir = dataset['img_dir']
+    # mask_dir = dataset['mask_dir']
+
+    train_info, val_info = split_data(data_dir, infos_name, rate=0.8)
+    train_loader = my_dataloader(data_dir,
+                                    train_info,
+                                    img_dir,
+                                    batch_size=args.batch_size,
+                                    shuffle=True,
+                                    )
+    val_loader = my_dataloader(data_dir,
+                                    val_info,
+                                    img_dir,
+                                    batch_size=args.batch_size,
+                                    shuffle=False,
+                                    )
     summaryWriter = None
     if args.phase == 'train':
-        logger.logger.info('start training......\n')
         log_path = makedirs(os.path.join(path, 'logs'))
         model_path = makedirs(os.path.join(path, 'models'))
         args.log_dir = log_path
@@ -271,12 +364,9 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--rd', type=int, default=50)
     parser.add_argument('--save-epoch', type=int, default=5)
-    parser.add_argument('--num-workers', type=int, default=0)
-    parser.add_argument('--input-size', type=str, default="144, 256, 256")
-    parser.add_argument('--input-path', type=str, default='/home/wangchangmiao/kidney/data/')
     parser.add_argument('--MODEL-WEIGHT', type=str, default=None)
     parser.add_argument('--phase', type=str, default='train')
-
+    parser.add_argument('--dropout', type=float, default=0)
 
     opt = parser.parse_args()
     args_dict = vars(opt)
@@ -291,5 +381,4 @@ if __name__ == '__main__':
         print(f"Training configuration saved to {now}")
     print(args_dict)
 
-    logger = Logger()
-    main(opt, logger, path)
+    main(opt, path)

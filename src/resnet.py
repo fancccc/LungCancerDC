@@ -201,28 +201,19 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-
-        out = []
-        out.append(x)
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
         if not self.no_max_pool:
             x = self.maxpool(x)
-
         x = self.layer1(x)
-        out.append(x)
         x = self.layer2(x)
-        out.append(x)
         x = self.layer3(x)
-        out.append(x)
         x = self.layer4(x)
-        out.append(x)
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
         x = self.fc(x)
-        out.append(x)
-        return out
+        return x
 
 
 def generate_model(model_depth, **kwargs):
@@ -246,28 +237,29 @@ def generate_model(model_depth, **kwargs):
     return model
 
 if __name__ == '__main__':
-    model = generate_model(101, n_classes=3)
-    loss_function = torch.nn.BCELoss()
-
-    model_dict = model.state_dict()
-    print(model_dict.keys())
-    pretrain = torch.load(r"C:\Users\Asus\Desktop\KidneyStone\models\r3d18_K_200ep.pth", map_location='cpu')
-    print(pretrain['state_dict'].keys())
-    old_keys = pretrain['state_dict'].keys()
-    for k in old_keys:
-        print(k)
-        break
-    pretrained_dict = {k: v for k, v in pretrain['state_dict'].items() if
-                       k in model_dict and model_dict[k].size() == v.size()}
-    model_dict.update(pretrained_dict)
-    model.load_state_dict(model_dict)
+    model = generate_model(50, n_classes=4)
+    # loss_function = torch.nn.BCELoss()
+    loss_function = torch.nn.CrossEntropyLoss()
+    #model_dict = model.state_dict()
+    #print(model_dict.keys())
+    #pretrain = torch.load(r"C:\Users\Asus\Desktop\KidneyStone\models\r3d18_K_200ep.pth", map_location='cpu')
+    #print(pretrain['state_dict'].keys())
+    #old_keys = pretrain['state_dict'].keys()
+    #for k in old_keys:
+    #     print(k)
+    #     break
+    # pretrained_dict = {k: v for k, v in pretrain['state_dict'].items() if
+    #                    k in model_dict and model_dict[k].size() == v.size()}
+    # model_dict.update(pretrained_dict)
+    # model.load_state_dict(model_dict)
     model.train()
-    img = torch.randn(2, 1, 32, 32, 32)
-    label = torch.randint(3, (2, 1, 1))
-    out = model(img)[-1]
+    img = torch.randn(1, 1, 32, 32, 32)
+    label = [1]
+
+    out = model(img)
     # pred = torch.sigmoid(out)
     pred = torch.softmax(out, dim=1)
-    # print('label:{}-out:{}-pred:{}'.format(label, out, pred))
+    print('label:{}-out:{}-pred:{}'.format(label, out, pred))
     from utils import calculate_acc_sigmoid
 
     # print(calculate_acc_sigmoid(pred, torch.tensor([[0.], [1.]])))

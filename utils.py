@@ -28,3 +28,10 @@ def calculate_accuracy(outputs, targets):
         total = targets.size(0)
         accuracy = 100 * correct / total
     return accuracy
+
+def calculate_acc_sigmoid(outputs, targets):
+    batch_size = targets.size(0)
+    pred = torch.round(outputs)
+    correct = (pred == targets).float()
+    n_correct_elems = correct.sum().item()
+    return n_correct_elems / batch_size
