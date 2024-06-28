@@ -1,6 +1,0 @@
-{
-  "data_dir": "/home/fanchenchenzc/datasets/LungCancer",
-  "infos_name": "infos0207.json",
-  "img_dir": "cropped_images_256",
-  "mask_dir": "cropped_masks_256"
-}

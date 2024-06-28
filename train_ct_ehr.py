@@ -1,43 +1,50 @@
 # -*- coding: utf-8 -*-
-# Time    : 2023/10/30 20:35
-# Author  : fanc
-# File    : train_base.py
-
+'''
+@file: train_ct_ehr.py
+@author: fanc
+@time: 2024/5/9 19:10
+'''
 import warnings
 warnings.filterwarnings("ignore")
 import os
 import argparse
 from src.dataloader import split_pandas, LungDataset
 from torch.utils.data import DataLoader
-from src.trainer import BaseTrainer
 from tqdm import tqdm
 import torch
-from utils import makedirs
 import time
 import json
-import numpy as np
 from src.loss import FocalLoss
 from torch.optim.lr_scheduler import ExponentialLR
-
-class CTrainer(BaseTrainer):
+from src.trainer import BaseTrainer
+from utils import makedirs
+class CETrainer(BaseTrainer):
     def __init__(self, *args, **kwargs):
-        super(CTrainer, self).__init__(*args, **kwargs)
-        self.loss_function = FocalLoss(alpha=self.args.loss_weight, device=self.device)
-        # self.loss_function = FocalLoss(alpha=[1-0.7, 1-0.1, 1-0.014, 1-0.17], device=self.device)
-        # weight = torch.tensor([1 - 0.7, 0.7]).to(self.device)
-
-        # self.loss_function = torch.nn.CrossEntropyLoss(weight=weight)
+        super(CETrainer, self).__init__(*args, **kwargs)
+        self.loss_function = FocalLoss(alpha=[1-0.72, 1-0.1, 1-0.17], device=self.device)
+        # alpha=[1-0.7, 1-0.1, 1-0.014, 1-0.17] 002
+        # alpha = [1-0.66, 1-0.29, 1-0.016, 1-0.027] 001
     def train_one_epoch(self):
-        self.model.train()
+        total_norm = 0
+        for p in self.model.parameters():
+            if p.grad is not None:
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+        total_norm = total_norm ** (1. / 2)
+
         meters = self.get_meters()
+        meters['total_norm'] = total_norm
+
+        self.model.train()
+
         all_preds = []
         all_labels = []
         class_correct = list(0. for i in range(self.args.num_classes))
         class_total = list(0. for i in range(self.args.num_classes))
         pbar_train = tqdm(enumerate(self.train_loader))
         for inx, data in pbar_train:
-            ct, label = data['ct128'].to(self.device), data['label'].to(self.device)
-            cls = self.model(ct)
+            ct32, ct128, clinical, label = data['ct32'].to(self.device), data['ct64'].to(self.device), data['clinical'].to(self.device), data['label'].to(self.device)
+            cls = self.model(ct128, clinical, ct32)
             loss = self.calculate_loss(cls, label)
             self.optimizer.zero_grad()
             loss.backward()
@@ -63,12 +70,8 @@ class CTrainer(BaseTrainer):
         meters['lr'] = self.optimizer.param_groups[0]['lr']
         meters.update(class_accuracies)
         self.print_metrics(meters, prefix=f'Train epoch:{self.epoch}/{self.epochs}')
-        self.his_train_loss.append(meters['loss'].avg.detach().cpu().item())
         if self.epoch % 5 == 0:
             self.evaluate()
-            self.plot_curve()
-        else:
-            self.his_val_loss.append(np.nan)
         self.save_checkpoint(meters, 'train')
 
     def evaluate(self):
@@ -81,10 +84,9 @@ class CTrainer(BaseTrainer):
         with torch.no_grad():
             pbar_test = tqdm(enumerate(self.test_loader))
             for inx, data in pbar_test:
-                ct, label = data['ct128'].to(self.device), data['label'].to(self.device)
-                # print(ct)
-                cls = self.model(ct)
-                # print(cls)
+                ct32, ct128, clinical, label = data['ct32'].to(self.device), data['ct64'].to(self.device), data[
+                    'clinical'].to(self.device), data['label'].to(self.device)
+                cls = self.model(ct128, clinical, ct32)
                 loss = self.calculate_loss(cls, label)
                 all_preds.extend(cls.detach().cpu().numpy())
                 all_labels.extend(label.cpu().numpy())
@@ -104,31 +106,27 @@ class CTrainer(BaseTrainer):
             # Calculate accuracy for each class
             class_accuracies = self.class_accuracies(class_correct, class_total)
             meters['accuracy'], meters['precision'], meters['recall'], meters['f1'], meters[
-                'auc'] = self.calculate_all_metrics(all_preds, all_labels, phase='val')
+                'auc'] = self.calculate_all_metrics(all_preds, all_labels)
             meters['lr'] = self.optimizer.param_groups[0]['lr']
             meters.update(class_accuracies)
             self.print_metrics(meters, prefix=f'Val epoch:{self.epoch}/{self.epochs}')
             if self.args.phase == 'train':
-                self.save_checkpoint(meters, phase='test')
-                self.his_val_loss.append(meters['loss'].avg.cpu().item())
+                self.save_checkpoint(meters, 'val')
 
 
-def main(args, path):
+def main(args):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print("can use {} gpus".format(torch.cuda.device_count()))
     print(device)
-    from src.resnet import generate_model
-    model = generate_model(model_depth=args.rd, n_classes=args.num_classes)
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.001, betas=(0.9, 0.99))
+    from src.nets import CENet
+    model = CENet(num_classes=args.num_classes, model_depth=args.rd)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.0001, betas=(0.9, 0.99))
     scheduler = ExponentialLR(optimizer, gamma=0.99)
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10, verbose=True)
 
     train_info, val_info = split_pandas(opt.dataset)
-    loss_weight = train_info['label'].value_counts().to_dict()
-    loss_weight = [1-round(loss_weight[i] / len(train_info), 2) for i in range(len(loss_weight))]
-    args.loss_weight = loss_weight
-    train_dataset = LungDataset(train_info, opt.dataset, use_ct128=True)
-    val_dataset = LungDataset(val_info, opt.dataset, use_ct128=True)
+    train_dataset = LungDataset(train_info, opt.dataset, use_cli=True, use_ct32=True, use_ct64=True)
+    val_dataset = LungDataset(val_info, opt.dataset, use_cli=True, use_ct32=True, use_ct64=True, phase='val')
     train_loader = DataLoader(train_dataset,
                                 batch_size=args.batch_size,
                                 shuffle=True,
@@ -140,11 +138,11 @@ def main(args, path):
                                 num_workers=args.num_workers
                                     )
     if args.phase == 'train':
-        log_path = makedirs(os.path.join(path, 'logs'))
-        model_path = makedirs(os.path.join(path, 'models'))
+        log_path = makedirs(os.path.join(opt.path, 'logs'))
+        model_path = makedirs(os.path.join(opt.path, 'models'))
         args.log_dir = log_path
         args.save_dir = model_path
-    trainer = CTrainer(model=model,
+    trainer = CETrainer(model=model,
                          optimizer=optimizer,
                          scheduler=scheduler,
                          device=device,
@@ -174,12 +172,10 @@ if __name__ == '__main__':
     opt.now = now
     path = None
     if opt.phase == 'train':
-        # if not os.path.exists(f'./results/{now}'):
-        #     os.makedirs(f'./results/{now}')
         path = makedirs(f'./results/{now}')
         opt.path = path
         with open(os.path.join(path, 'train_config.json'), 'w') as fp:
             json.dump(args_dict, fp, indent=4)
         print(f"Training configuration saved to {now}")
     print(args_dict)
-    main(opt, path)
+    main(opt)

@@ -119,8 +119,8 @@ class ResNet(nn.Module):
                  widen_factor=1.0,
                  n_classes=2):
         super().__init__()
-        if n_classes == 2:
-            n_classes = 1
+        # if n_classes == 2:
+        #     n_classes = 1
         block_inplanes = [int(x * widen_factor) for x in block_inplanes]
 
         self.in_planes = block_inplanes[0]
@@ -129,7 +129,7 @@ class ResNet(nn.Module):
         self.conv1 = nn.Conv3d(n_input_channels,
                                self.in_planes,
                                kernel_size=(7, 7, 7),
-                               stride=(1, 2, 2),
+                               stride=(2, 2, 2),
                                padding=(3, 3, 3),
                                bias=False)
         self.bn1 = nn.BatchNorm3d(self.in_planes)
@@ -184,9 +184,16 @@ class ResNet(nn.Module):
                                      planes=planes * block.expansion,
                                      stride=stride)
             else:
+                # downsample = nn.Sequential(
+                #     conv1x1x1(self.in_planes, planes * block.expansion, stride),
+                #     nn.BatchNorm3d(planes * block.expansion))
                 downsample = nn.Sequential(
-                    conv1x1x1(self.in_planes, planes * block.expansion, stride),
-                    nn.BatchNorm3d(planes * block.expansion))
+                    nn.Conv3d(
+                        self.in_planes,
+                        planes * block.expansion,
+                        kernel_size=1,
+                        stride=stride,
+                        bias=False), nn.BatchNorm3d(planes * block.expansion))
 
         layers = []
         layers.append(
@@ -239,7 +246,7 @@ def generate_model(model_depth, **kwargs):
 if __name__ == '__main__':
     model = generate_model(50, n_classes=4)
     # loss_function = torch.nn.BCELoss()
-    loss_function = torch.nn.CrossEntropyLoss()
+    # loss_function = torch.nn.CrossEntropyLoss()
     #model_dict = model.state_dict()
     #print(model_dict.keys())
     #pretrain = torch.load(r"C:\Users\Asus\Desktop\KidneyStone\models\r3d18_K_200ep.pth", map_location='cpu')
@@ -253,13 +260,14 @@ if __name__ == '__main__':
     # model_dict.update(pretrained_dict)
     # model.load_state_dict(model_dict)
     model.train()
-    img = torch.randn(1, 1, 32, 32, 32)
-    label = [1]
+    img = torch.randn(1, 1, 128, 128, 128)
+    # label = [1]
 
     out = model(img)
+    print(out.shape)
     # pred = torch.sigmoid(out)
-    pred = torch.softmax(out, dim=1)
-    print('label:{}-out:{}-pred:{}'.format(label, out, pred))
+    # pred = torch.softmax(out, dim=1)
+    # print('label:{}-out:{}-pred:{}'.format(label, out, pred))
     from utils import calculate_acc_sigmoid
 
     # print(calculate_acc_sigmoid(pred, torch.tensor([[0.], [1.]])))
