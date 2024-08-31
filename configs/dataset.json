@@ -1,0 +1,16 @@
+{
+  "data_dir": "/home/zcd/datasets/LungCancer/LC0710",
+  "infos_name": "data.csv",
+  "img_dir_32": "cropped/sitk32",
+  "img_dir_64": "images/cropped_images_64",
+  "img_dir_128": "cropped/sitk128",
+  "slice_dir": "images_2d_slice",
+  "mask_dir": "cpn_pred_lungseg",
+  "clinical_dir": "clinical.csv",
+  "radiomics_dir": "radiomics.csv",
+  "anns": {
+    "浸润性腺癌": 0, "微浸润腺癌": 1, "原位腺癌": 2, "不典型腺瘤样增生": 3},
+  "net":{
+    "netimport": "from CLIP.clip_tmss import CLIP_TMSS_Net as MYNET"
+  }
+}

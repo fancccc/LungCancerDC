@@ -1,0 +1,13 @@
+{
+  "data_dir": "/home/zcd/datasets/CRDC",
+  "infos_name": "infos0528_3classes.csv",
+  "img_dir_32": "images/cropped_images_32",
+  "img_dir_64": "images/cropped_images_64",
+  "img_dir_128": "images/cropped_images_128",
+  "slice_dir": "images_2d_slice",
+  "mask_dir": "cpn_pred_lungseg",
+  "clinical_dir": "clinical/clinical_processed.csv",
+  "under_sample": "under_sample_balanced.csv",
+  "anns": {
+    "浸润性腺癌": 0, "微浸润腺癌": 1, "原位腺癌": 2, "不典型腺瘤样增生": 3}
+}
