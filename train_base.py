@@ -22,7 +22,7 @@ from torch.optim.lr_scheduler import ExponentialLR
 class CTrainer(BaseTrainer):
     def __init__(self, *args, **kwargs):
         super(CTrainer, self).__init__(*args, **kwargs)
-        # self.loss_function = FocalLoss(alpha=self.args.loss_weight, device=self.device)
+        self.loss_function = FocalLoss(alpha=self.args.loss_weight, device=self.device)
         # self.loss_function = FocalLoss(alpha=[1-0.7, 1-0.1, 1-0.014, 1-0.17], device=self.device)
         # weight = torch.tensor([1 - 0.7, 0.7]).to(self.device)
 
@@ -39,7 +39,7 @@ class CTrainer(BaseTrainer):
             # data['image'] = data['ct128'].to(self.device)
             # data['clinical'] = data['clinical'].to(self.device)
             # label = data['label'].to(self.device)
-            ct, label = data['ct32'].to(self.device), data['label'].to(self.device)
+            ct, label = data['ct128'].to(self.device), data['label'].to(self.device)
             cls = self.model(ct)
             loss = self.calculate_loss(cls, label)
             self.optimizer.zero_grad()
@@ -86,7 +86,7 @@ class CTrainer(BaseTrainer):
                 # data['image'] = data['ct128'].to(self.device)
                 # data['clinical'] = data['clinical'].to(self.device)
                 # label = data['label'].to(self.device)
-                ct, label = data['ct32'].to(self.device), data['label'].to(self.device)
+                ct, label = data['ct128'].to(self.device), data['label'].to(self.device)
                 cls = self.model(ct)
                 # print(cls)
                 loss = self.calculate_loss(cls, label)
@@ -121,12 +121,12 @@ def main(args, path):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print("can use {} gpus".format(torch.cuda.device_count()))
     print(device)
-    from src.resnet import generate_model
-    model = generate_model(model_depth=args.rd, n_classes=args.num_classes)
+    # from src.resnet import generate_model
+    # model = generate_model(model_depth=args.rd, n_classes=args.num_classes)
     # from multisurv.nets import MultiSurv
     # model = MultiSurv()
-    # from comparison.vit import COMP_VIT
-    # model = COMP_VIT(img_size=args.image_size, num_classes=args.num_classes)
+    from comparison.vit import COMP_VIT
+    model = COMP_VIT(img_size=args.image_size, num_classes=args.num_classes)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.001, betas=(0.9, 0.99))
     scheduler = ExponentialLR(optimizer, gamma=0.99)
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10, verbose=True)
@@ -181,10 +181,10 @@ if __name__ == '__main__':
     args_dict = vars(opt)
     now = time.strftime('%y%m%d%H%M', time.localtime())
     opt.now = now
-    opt.image_size = (32, 32, 32)
-    opt.use_ct32 = True
-    opt.use_ct128 = False
-    opt.net = 'from src.resnet import generate_model'
+    opt.image_size = (128, 128, 32)
+    opt.use_ct32 = False
+    opt.use_ct128 = True
+    opt.net = 'from comparison.vit import COMP_VIT'
     path = None
     if opt.phase == 'train':
         # if not os.path.exists(f'./results/{now}'):
