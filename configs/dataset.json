@@ -9,8 +9,5 @@
   "clinical_dir": "clinical.csv",
   "radiomics_dir": "radiomics.csv",
   "anns": {
-    "浸润性腺癌": 0, "微浸润腺癌": 1, "原位腺癌": 2, "不典型腺瘤样增生": 3},
-  "net":{
-    "netimport": "from CLIP.clip_tmss import CLIP_TMSS_Net as MYNET"
-  }
+    "浸润性腺癌": 0, "微浸润腺癌": 1, "原位腺癌": 2, "不典型腺瘤样增生": 3}
 }

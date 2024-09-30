@@ -36,7 +36,10 @@ class CTrainer(BaseTrainer):
         class_total = list(0. for i in range(self.args.num_classes))
         pbar_train = tqdm(enumerate(self.train_loader))
         for inx, data in pbar_train:
-            ct, label = data['ct128'].to(self.device), data['label'].to(self.device)
+            # data['image'] = data['ct128'].to(self.device)
+            # data['clinical'] = data['clinical'].to(self.device)
+            # label = data['label'].to(self.device)
+            ct, label = data['ct32'].to(self.device), data['label'].to(self.device)
             cls = self.model(ct)
             loss = self.calculate_loss(cls, label)
             self.optimizer.zero_grad()
@@ -65,7 +68,7 @@ class CTrainer(BaseTrainer):
         self.print_metrics(meters, prefix=f'Train epoch:{self.epoch}/{self.epochs}')
         self.his_train_loss.append(meters['loss'].avg.detach().cpu().item())
         self.evaluate()
-        self.plot_curve()
+        # self.plot_curve()
         # else:
         #     self.his_val_loss.append(np.nan)
         self.save_checkpoint(meters, 'train')
@@ -80,8 +83,10 @@ class CTrainer(BaseTrainer):
         with torch.no_grad():
             pbar_test = tqdm(enumerate(self.test_loader))
             for inx, data in pbar_test:
-                ct, label = data['ct128'].to(self.device), data['label'].to(self.device)
-                # print(ct)
+                # data['image'] = data['ct128'].to(self.device)
+                # data['clinical'] = data['clinical'].to(self.device)
+                # label = data['label'].to(self.device)
+                ct, label = data['ct32'].to(self.device), data['label'].to(self.device)
                 cls = self.model(ct)
                 # print(cls)
                 loss = self.calculate_loss(cls, label)
@@ -109,7 +114,7 @@ class CTrainer(BaseTrainer):
             self.print_metrics(meters, prefix=f'Val epoch:{self.epoch}/{self.epochs}')
             if self.args.phase == 'train':
                 self.save_checkpoint(meters, phase='test')
-                self.his_val_loss.append(meters['loss'].avg.cpu().item())
+                # self.his_val_loss.append(meters['loss'].avg.cpu().item())
 
 
 def main(args, path):
@@ -118,17 +123,21 @@ def main(args, path):
     print(device)
     from src.resnet import generate_model
     model = generate_model(model_depth=args.rd, n_classes=args.num_classes)
+    # from multisurv.nets import MultiSurv
+    # model = MultiSurv()
+    # from comparison.vit import COMP_VIT
+    # model = COMP_VIT(img_size=args.image_size, num_classes=args.num_classes)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.001, betas=(0.9, 0.99))
     scheduler = ExponentialLR(optimizer, gamma=0.99)
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10, verbose=True)
 
     train_info, val_info = split_pandas(opt.dataset)
 
-    loss_weight = train_info['label'].apply(lambda x: 3 if x == 4 else x).value_counts().to_dict()
+    loss_weight = train_info['label'].apply(lambda x: 2 if x == 3 else x).value_counts().to_dict()
     loss_weight = [1-round(loss_weight[i] / len(train_info), 2) for i in range(len(loss_weight))]
     args.loss_weight = loss_weight
-    train_dataset = LungDataset(train_info, opt.dataset, use_ct128=True)
-    val_dataset = LungDataset(val_info, opt.dataset, use_ct128=True)
+    train_dataset = LungDataset(train_info, opt.dataset, use_ct32=args.use_ct32, use_ct128=args.use_ct128, use_cli=True)
+    val_dataset = LungDataset(val_info, opt.dataset, use_ct32=args.use_ct32, use_ct128=args.use_ct128, use_cli=True)
     train_loader = DataLoader(train_dataset,
                                 batch_size=args.batch_size,
                                 shuffle=True,
@@ -158,7 +167,7 @@ def main(args, path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num-classes', type=int, default=4)
+    parser.add_argument('--num-classes', type=int, default=3)
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch-size', type=int, default=1)
     parser.add_argument('--lr', type=float, default=0.001)
@@ -172,6 +181,10 @@ if __name__ == '__main__':
     args_dict = vars(opt)
     now = time.strftime('%y%m%d%H%M', time.localtime())
     opt.now = now
+    opt.image_size = (32, 32, 32)
+    opt.use_ct32 = True
+    opt.use_ct128 = False
+    opt.net = 'from src.resnet import generate_model'
     path = None
     if opt.phase == 'train':
         # if not os.path.exists(f'./results/{now}'):

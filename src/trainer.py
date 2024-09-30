@@ -98,6 +98,17 @@ class BaseTrainer:
         # print(pred.shape, label.shape)
         probabilities = torch.softmax(pred, dim=1)
         _, predicted_labels = torch.max(probabilities, 1)
+        if self.args.phase == 'val':
+            res = {}
+            res['true_label'] = label.numpy()
+            res['predicted'] = probabilities.numpy()
+            # import pandas as pd
+            # res = pd.DataFrame([_.numpy(), label.numpy()]).T
+            save_dir = os.path.dirname(self.args.MODEL_WEIGHT)
+            np.save(os.path.join(save_dir, 'pred.npy'), res)
+            # with open(os.path.join(save_dir, 'pred.json'), 'w') as f:
+            #     json.dump(res, f)
+
 
         label = label.numpy()
         predicted_labels = predicted_labels.numpy()

@@ -1,0 +1,13 @@
+{
+  "data_dir": "/home/zcd/datasets/CRDC",
+  "infos_name": "data.csv",
+  "img_dir_32": "images/cropped32sitk",
+  "img_dir_64": "images/cropped_images_64",
+  "img_dir_128": "images/cropped128sitk",
+  "slice_dir": "images_2d_slice",
+  "mask_dir": "cpn_pred_lungseg",
+  "clinical_dir": "clinical.csv",
+  "radiomics_dir": "radiomics.csv",
+  "anns": {
+    "Adenocarcinoma": 0, "Small Cell Carcinoma": 1, "Large Cell Carcinoma": 2, "Squamous Cell Carcinoma": 3}
+}
