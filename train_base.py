@@ -36,11 +36,11 @@ class CTrainer(BaseTrainer):
         class_total = list(0. for i in range(self.args.num_classes))
         pbar_train = tqdm(enumerate(self.train_loader))
         for inx, data in pbar_train:
-            # data['image'] = data['ct128'].to(self.device)
-            # data['clinical'] = data['clinical'].to(self.device)
-            # label = data['label'].to(self.device)
-            ct, label = data['ct128'].to(self.device), data['label'].to(self.device)
-            cls = self.model(ct)
+            data['image'] = data['ct128'].to(self.device)
+            data['clinical'] = data['clinical'].to(self.device)
+            label = data['label'].to(self.device)
+            # ct, label = data['ct128'].to(self.device), data['label'].to(self.device)
+            cls = self.model(data)
             loss = self.calculate_loss(cls, label)
             self.optimizer.zero_grad()
             loss.backward()
@@ -83,11 +83,11 @@ class CTrainer(BaseTrainer):
         with torch.no_grad():
             pbar_test = tqdm(enumerate(self.test_loader))
             for inx, data in pbar_test:
-                # data['image'] = data['ct128'].to(self.device)
-                # data['clinical'] = data['clinical'].to(self.device)
-                # label = data['label'].to(self.device)
-                ct, label = data['ct128'].to(self.device), data['label'].to(self.device)
-                cls = self.model(ct)
+                data['image'] = data['ct128'].to(self.device)
+                data['clinical'] = data['clinical'].to(self.device)
+                label = data['label'].to(self.device)
+                # ct, label = data['ct128'].to(self.device), data['label'].to(self.device)
+                cls = self.model(data)
                 # print(cls)
                 loss = self.calculate_loss(cls, label)
                 all_preds.extend(cls.detach().cpu().numpy())
@@ -123,10 +123,10 @@ def main(args, path):
     print(device)
     # from src.resnet import generate_model
     # model = generate_model(model_depth=args.rd, n_classes=args.num_classes)
-    # from multisurv.nets import MultiSurv
-    # model = MultiSurv()
-    from comparison.vit import COMP_VIT
-    model = COMP_VIT(img_size=args.image_size, num_classes=args.num_classes)
+    from multisurv.nets import MultiSurv
+    model = MultiSurv(clinical_length=8)
+    # from comparison.vit import COMP_VIT
+    # model = COMP_VIT(img_size=args.image_size, num_classes=args.num_classes)
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.001, betas=(0.9, 0.99))
     scheduler = ExponentialLR(optimizer, gamma=0.99)
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10, verbose=True)

@@ -407,7 +407,7 @@ class Fusion(nn.Module):
 
 class MultiSurv(torch.nn.Module):
     """Deep Learning model for MULTImodal pan-cancer SURVival prediction."""
-    def __init__(self, fusion_method='max',
+    def __init__(self, fusion_method='max', clinical_length=27,
                  n_output_intervals=None, device=None):
         super(MultiSurv, self).__init__()
         # self.data_modalities = data_modalities
@@ -427,7 +427,7 @@ class MultiSurv(torch.nn.Module):
 
         # Clinical -----------------------------------------------------------#
         self.clinical_submodel = ClinicalNet(
-            output_vector_size=self.mfs)
+            output_vector_size=self.mfs, embedding_dims=clinical_length)
         self.submodels['clinical'] = self.clinical_submodel
 
         if fusion_method == 'cat':
