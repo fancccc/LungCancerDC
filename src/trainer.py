@@ -55,19 +55,20 @@ class BaseTrainer:
             self.logger.info("Epoch: {}, train time: {}, params: {}".format(epoch, end - start, self.num_params))
 
     def self_model(self):
+        self.model.to(self.device)
         if self.args.MODEL_WEIGHT:
             self.load_model(self.args.MODEL_WEIGHT)
             # self.model = load_model(model=self.model,
             #                 checkpoint_path=self.args.MODEL_WEIGHT,
             #                 multi_gpu=torch.cuda.device_count() > 1)
             # print('load model weight success!')
-        self.model = self.model.to(self.device)
+        # self.model = self.model.to(self.device)
         self.num_params = sum([param.nelement() for param in self.model.parameters()])
         print('num_params: {}'.format(self.num_params))
 
     def load_model(self, checkpoint_path, multi_gpu=False):
         print("Loading model...")
-        data = torch.load(checkpoint_path)
+        data = torch.load(checkpoint_path, map_location=self.device)
         if 'model_state_dict' in data.keys():
             state_dict = data['model_state_dict']
         else:
@@ -78,8 +79,8 @@ class BaseTrainer:
         if multi_gpu:
             self.model = nn.DataParallel(self.model)
         self.epoch = data['epoch']
-        self.optimizer.load_state_dict(data['optimizer_state_dict'])
-        self.scheduler.load_state_dict(data['scheduler_state_dict'])
+        # self.optimizer.load_state_dict(data['optimizer_state_dict'])
+        # self.scheduler.load_state_dict(data['scheduler_state_dict'])
         print("Finished loading model!")
 
     def calculate_metrics(self, pred, label):

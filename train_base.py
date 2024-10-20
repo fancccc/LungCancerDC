@@ -127,6 +127,12 @@ def main(args, path):
     model = MultiSurv(clinical_length=8)
     # from comparison.vit import COMP_VIT
     # model = COMP_VIT(img_size=args.image_size, num_classes=args.num_classes)
+
+    # from src.tmss import TMSSNet
+    # model = TMSSNet(num_classes=args.num_classes, img_size=args.image_size, n_clin_var=27)
+    # from src.nets2 import CliNet
+    # model = CliNet(num_classes=args.num_classes, clinical_length=27)
+
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.001, betas=(0.9, 0.99))
     scheduler = ExponentialLR(optimizer, gamma=0.99)
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10, verbose=True)
@@ -137,7 +143,7 @@ def main(args, path):
     loss_weight = [1-round(loss_weight[i] / len(train_info), 2) for i in range(len(loss_weight))]
     args.loss_weight = loss_weight
     train_dataset = LungDataset(train_info, opt.dataset, use_ct32=args.use_ct32, use_ct128=args.use_ct128, use_cli=True)
-    val_dataset = LungDataset(val_info, opt.dataset, use_ct32=args.use_ct32, use_ct128=args.use_ct128, use_cli=True)
+    val_dataset = LungDataset(val_info, opt.dataset, phase='val', use_ct32=args.use_ct32, use_ct128=args.use_ct128, use_cli=True)
     train_loader = DataLoader(train_dataset,
                                 batch_size=args.batch_size,
                                 shuffle=True,
@@ -184,7 +190,7 @@ if __name__ == '__main__':
     opt.image_size = (128, 128, 32)
     opt.use_ct32 = False
     opt.use_ct128 = True
-    opt.net = 'from comparison.vit import COMP_VIT'
+    opt.net = 'from multisurv.nets import MultiSurv'
     path = None
     if opt.phase == 'train':
         # if not os.path.exists(f'./results/{now}'):

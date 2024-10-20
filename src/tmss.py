@@ -23,6 +23,7 @@ class ViT(nn.Module):
             in_channels: int,
             img_size: Union[Sequence[int], int],
             patch_size: Union[Sequence[int], int],
+            n_clin_var: int = 27,
             hidden_size: int = 768,
             mlp_dim: int = 3072,
             num_layers: int = 12,
@@ -74,6 +75,7 @@ class ViT(nn.Module):
             in_channels=in_channels,
             img_size=img_size,
             patch_size=patch_size,
+            n_clin_var=n_clin_var,
             hidden_size=hidden_size,
             num_heads=num_heads,
             pos_embed=pos_embed,
@@ -154,6 +156,7 @@ class PatchEmbeddingBlock(nn.Module):
             in_channels: int,
             img_size: Union[Sequence[int], int],
             patch_size: Union[Sequence[int], int],
+            n_clin_var: int,
             hidden_size: int,
             num_heads: int,
             pos_embed: str,
@@ -265,6 +268,7 @@ class TMSSNet(nn.Module):
             # out_channels: int,
             img_size: int = 32,
             # feature_size: int = 16,
+            n_clin_var: int = 27,
             hidden_size: int = 768,
             mlp_dim: int = 3072,
             num_heads: int = 12,
@@ -291,20 +295,22 @@ class TMSSNet(nn.Module):
         self.hidden_size = hidden_size
 
         self.classification = False
-        self.patch_embedding = PatchEmbeddingBlock(
-            in_channels=in_channels,
-            img_size=img_size,
-            patch_size=self.patch_size,
-            hidden_size=hidden_size,
-            num_heads=num_heads,
-            pos_embed=pos_embed,
-            dropout_rate=dropout_rate,
-            spatial_dims=spatial_dims,
-        )
+        # self.patch_embedding = PatchEmbeddingBlock(
+        #     in_channels=in_channels,
+        #     img_size=img_size,
+        #     patch_size=self.patch_size,
+        #     n_clin_var=n_clin_var,
+        #     hidden_size=hidden_size,
+        #     num_heads=num_heads,
+        #     pos_embed=pos_embed,
+        #     dropout_rate=dropout_rate,
+        #     spatial_dims=spatial_dims,
+        # )
         self.vit = ViT(
             in_channels=in_channels,
             img_size=img_size,
             patch_size=self.patch_size,
+            n_clin_var=n_clin_var,
             hidden_size=hidden_size,
             mlp_dim=mlp_dim,
             num_layers=self.num_layers,
@@ -319,7 +325,7 @@ class TMSSNet(nn.Module):
                                 nn.BatchNorm1d(256),
                                 nn.ReLU(inplace=True),
                                 nn.Dropout(0.5),
-                                nn.Linear(256, 3))
+                                nn.Linear(256, num_classes))
 
     def proj_feat(self, x, hidden_size, feat_size):
         new_view = (x.size(0), *feat_size, hidden_size)
@@ -329,7 +335,7 @@ class TMSSNet(nn.Module):
         return x
 
     def forward(self, data):
-        img, cli = data['ct32'], data['clinical']
+        img, cli = data['image'], data['clinical']
         x = (img, cli)
         # print(x[0].shape, x[1].shape)
         # img_in, clin_in = x

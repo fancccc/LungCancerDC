@@ -26,8 +26,8 @@ class CLIPTrainer(BaseTrainer):
         # self.loss_function = FocalLoss(alpha=self.args.loss_weight, device=self.device)
         # weight = torch.tensor([0.64, 0.29]).to(self.device)
         # self.loss_function = torch.nn.CrossEntropyLoss(weight=weight)
-        for name, param in self.model.named_parameters():
-            param.register_hook(lambda grad, name=name: print(name, grad) if torch.isnan(grad).any() else None)
+        # for name, param in self.model.named_parameters():
+        #     param.register_hook(lambda grad, name=name: print(name, grad) if torch.isnan(grad).any() else None)
 
     def train_one_epoch(self):
         meters = self.get_meters()
@@ -46,7 +46,8 @@ class CLIPTrainer(BaseTrainer):
             cls, loss = self.model(data)
             # assert not torch.isnan(cls).any(), f'data {data}'
             if torch.isnan(loss).any():
-                self.args.MODEL_WEIGHT = os.path.join(self.self.args.save_dir, 'model_last.pt')
+                # print(loss)
+                self.args.MODEL_WEIGHT = os.path.join(self.args.save_dir, 'model_last.pt')
                 self.self_model()
                 self.logger.info('loss is NaN, reload thr last weight!')
                 return
@@ -123,7 +124,7 @@ class CLIPTrainer(BaseTrainer):
             # new_loss_weight = [(1-i*0.8)*0.8 for i in new_loss_weight]
             # new_loss_weight = [i/sum(new_loss_weight) for i in new_loss_weight]
             # self.model.update_loss_weight(new_loss_weight)
-            # meters['focal loss weight'] = ','.join([str(round(i, 2)) for i in new_loss_weight])
+            # # meters['focal loss weight'] = ','.join([str(round(i, 2)) for i in new_loss_weight])
             # print('loss weight : ', ','.join([str(round(i, 2)) for i in new_loss_weight]))
 
             meters['accuracy'], meters['precision'], meters['recall'], meters['f1'], meters[
@@ -143,26 +144,35 @@ def main(args, path):
     # from CLIP.model import CLIP_VBCRNet5 as MYNET
     # exec(args.netimport + ' as MYNET')
     # from src.tmss import TMSSNet as MYNET
-    from CLIP.clip_tmss import CLIP_TMSS_NetV3 as MYNET
 
-    model = MYNET(num_classes=args.num_classes, clinical_length=27).to(device)
-    base_params = [param for name, param in model.named_parameters() if not name.startswith('CLIP.encode_clinical')]
-    clinical_encoder_module = [param for name, param in model.named_parameters() if name.startswith('CLIP.encode_clinical')]
+    # base_params = [param for name, param in model.named_parameters() if not name.startswith('CLIP.encode_clinical')]
+    # clinical_encoder_module = [param for name, param in model.named_parameters() if name.startswith('CLIP.encode_clinical')]
     # optimizer = torch.optim.Adam([
     #     {'params': base_params, 'lr': 1e-3, 'weight_decay': 1e-4},  # 为基础网络设置较低的学习率
     #     {'params': clinical_encoder_module, 'lr': 1e-4, 'weight_decay': 1e-4}  # 为新添加的分类器设置较高的学习率
     # ])
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=0.001, betas=(0.9, 0.99))
-    scheduler = ExponentialLR(optimizer, gamma=0.99)
+
     # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.1, patience=10, verbose=True)
 
-    train_info, val_info = split_pandas(opt.dataset)
+    train_info, val_info = split_pandas(args.dataset)
     # loss_weight = train_info['label']
     loss_weight = train_info['label'].value_counts().to_dict()
     loss_weight = [1-round(loss_weight[i] / len(train_info), 2) for i in range(len(loss_weight))]
     args.loss_weight = loss_weight
-    train_dataset = LungDataset(train_info, opt.dataset, use_ct32=True, use_ct128=True, use_radiomics=False, use_cli=True, use_bbox=True, use_seg=False)
-    val_dataset = LungDataset(val_info, opt.dataset, use_ct32=True, use_ct128=True, use_radiomics=False, use_cli=True, use_bbox=True, use_seg=False)
+
+    from CLIP.clip_tmss import CLIP_TMSS_NetV5 as MYNET
+    clinical_length = 27
+    if 'CRDC' in args.dataset:
+        clinical_length = 8
+    model = MYNET(num_classes=args.num_classes, clinical_length=clinical_length, loss_weight=loss_weight, clip_loss_weight=args.clip)
+    for name, param in model.named_parameters():
+        if 'classifier' not in name:  # 只保留全连接层可训练
+            param.requires_grad = False
+    optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()), lr=args.lr, weight_decay=0.001, betas=(0.9, 0.99))
+    scheduler = ExponentialLR(optimizer, gamma=0.99)
+
+    train_dataset = LungDataset(train_info, args.dataset, use_ct32=True, use_ct128=True, use_radiomics=False, use_cli=True, use_bbox=True, use_seg=False)
+    val_dataset = LungDataset(val_info, args.dataset, phase='val', use_ct32=True, use_ct128=True, use_radiomics=False, use_cli=True, use_bbox=True, use_seg=False)
     train_loader = DataLoader(train_dataset,
                                 batch_size=args.batch_size,
                                 shuffle=True,
@@ -197,6 +207,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch-size', type=int, default=1)
     parser.add_argument('--lr', type=float, default=0.001)
+    parser.add_argument('--clip', type=float, default=0.5)
     parser.add_argument('--MODEL-WEIGHT', type=str, default=None)
     parser.add_argument('--phase', type=str, default='train')
     parser.add_argument('--num-workers', type=int, default=4)
@@ -210,7 +221,7 @@ if __name__ == '__main__':
         config = json.load(f)
     path = None
     # opt.netimport = config['net']['netimport']
-    opt.net = 'from CLIP.clip_tmss import CLIP_TMSS_NetV3 as MYNET'
+    opt.net = 'from CLIP.clip_tmss import CLIP_TMSS_NetV5 as MYNET'
     if opt.phase == 'train':
         path = makedirs(f'./results/{now}')
         args_dict = vars(opt)

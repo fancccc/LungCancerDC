@@ -467,10 +467,7 @@ class CLIP_C3_V4(nn.Module):
     ehr
     """
     def __init__(self,
-                 # embed_dim: int,
                  hidden_size: 768,
-                 # transformer_heads: 12,
-                 # transformer_layers: 6,
                  clinical_length: 27
                  ):
         super().__init__()
@@ -486,9 +483,115 @@ class CLIP_C3_V4(nn.Module):
         data['image'], data['bbox'] = data['ct32'], data['bbox32']
         image_features1 = self.encode_image1(data)
         data['image'], data['bbox'] = data['ct128'], data['bbox128']
-        image_features2 = self.encode_image2(data)
+        # image_features2 = self.encode_image2(data)
+
+        # clinical_features = self.encode_clinical(clinical)
+
+
+        image_features1 = image_features1 / image_features1.norm(dim=1, keepdim=True)
+        # image_features2 = image_features2 / image_features2.norm(dim=1, keepdim=True)
+        feats = torch.cat([image_features1], dim=1)
+        # print(image_features1.shape)
+        # clinical_features = clinical_features / clinical_features.norm(dim=1, keepdim=True)
+        # print(clinical_features.shape)
+        # clinical_features = clinical_features.unsqueeze(dim=1)
+        # print(clinical_features.shape)
+        # feats = torch.cat([image_features1, image_features2, clinical_features], dim=1)
+        # print(feats.shape)
+        # logit_scale = self.logit_scale.exp()
+        # logits_image1_clinical = logit_scale * image_features1.squeeze(1) @ clinical_features.squeeze(1).t()
+        # logits_image2_clinical = logit_scale * image_features2.squeeze(1) @ clinical_features.squeeze(1).t()
+        #
+        # logits = [[logits_image1_clinical, logits_image1_clinical.t()],
+        #             [logits_image2_clinical, logits_image2_clinical.t()]]
+        logits = None
+
+        return logits, feats
+
+from CLIP.encoder import ModiResnet
+class CLIP_C3_V6(nn.Module):
+    """
+    clip with tmss
+    ct+bbox
+    ehr
+    """
+    def __init__(self,
+                 hidden_size: 512,
+                 clinical_length: 27
+                 ):
+        super().__init__()
+
+        self.encode_image32 = ModiResnet(rd=18)
+        # weight = torch.load('/home/zcd/codes/LungCancerDC/results/2410050010/models/model_best_val.pt')['model_state_dict'] # 32encoder
+        # state_dict = {k.replace('CLIP.encode_image32.', ''): v for k, v in weight.items() if 'encode_image32' in k}
+        # self.encode_image32.load_state_dict(state_dict)
+
+        self.encode_image128 = ModiResnet(rd=18)
+        # weight = torch.load('/home/zcd/codes/LungCancerDC/results/2410050237/models/model_best_val.pt')['model_state_dict'] # 128encoder
+        # state_dict = {k.replace('CLIP.encode_image128.', ''): v for k, v in weight.items() if 'encode_image128' in k}
+        # self.encode_image128.load_state_dict(state_dict)
+
+        self.encode_clinical = ClinicalNet(output_vector_size=hidden_size, embedding_dims=clinical_length)
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+
+    def forward(self, data):
+        clinical = data['clinical']
+        data['image'], data['bbox'] = data['ct32'], data['bbox32']
+        image_features1 = self.encode_image32(data)
+        data['image'], data['bbox'] = data['ct128'], data['bbox128']
+        image_features2 = self.encode_image128(data)
 
         clinical_features = self.encode_clinical(clinical)
+        clinical_features = clinical_features.unsqueeze(dim=1)
+        feats = torch.cat([image_features2], dim=1)
+        # feats = torch.cat([image_features1, image_features2, clinical_features], dim=1)
+        # print(image_features1)
+        image_features1 = image_features1 / image_features1.norm(dim=2, keepdim=True)
+        # print(image_features1)
+        image_features2 = image_features2 / image_features2.norm(dim=2, keepdim=True)
+        # feats = torch.cat([image_features1, image_features2], dim=1)
+        # print(image_features1.shape)
+        clinical_features = clinical_features / clinical_features.norm(dim=2, keepdim=True)
+        # print(clinical_features.shape)
+        # print(feats.shape)
+        logit_scale = self.logit_scale.exp()
+        logits_image1_clinical = logit_scale * image_features1.squeeze(1) @ clinical_features.squeeze(1).t()
+        logits_image2_clinical = logit_scale * image_features2.squeeze(1) @ clinical_features.squeeze(1).t()
+        #
+        logits = [[logits_image1_clinical, logits_image1_clinical.t()],
+                    [logits_image2_clinical, logits_image2_clinical.t()]]
+        # logits = None
+
+        return logits, feats
+
+
+from CLIP.CLIP_VBCR import TabularEncoder
+class CLIP_C3_V5(nn.Module):
+    """
+    clip with tmss
+    ct+bbox
+    ehr
+    """
+    def __init__(self,
+                 hidden_size: 768,
+                 clinical_length: 27
+                 ):
+        super().__init__()
+
+        self.encode_image1 = TmssModule(img_size=(32, 32, 32))
+        self.encode_image2 = TmssModule(img_size=(128, 128, 32))
+        self.encode_clinical = TabularEncoder(hid_width=hidden_size, context_length=clinical_length)
+
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+
+    def forward(self, data):
+        clinical = data['clinical']
+        data['image'], data['bbox'] = data['ct32'], data['bbox32']
+        image_features1 = self.encode_image1(data)
+        data['image'], data['bbox'] = data['ct128'], data['bbox128']
+        image_features2 = self.encode_image2(data)
+
+        clinical_features = self.encode_clinical(clinical.unsqueeze(-1))
 
 
         image_features1 = image_features1 / image_features1.norm(dim=1, keepdim=True)
@@ -497,7 +600,7 @@ class CLIP_C3_V4(nn.Module):
         clinical_features = clinical_features / clinical_features.norm(dim=1, keepdim=True)
         # print(clinical_features.shape)
         # image_features = image_features.mean(dim=1, keepdim=False)
-        clinical_features = clinical_features.unsqueeze(dim=1)
+        # clinical_features = clinical_features.unsqueeze(dim=1)
         # print(clinical_features.shape)
         feats = torch.cat([image_features1, image_features2, clinical_features], dim=1)
         # print(feats.shape)
@@ -574,7 +677,7 @@ class TMSSNet(nn.Module):
                                 nn.BatchNorm1d(256),
                                 nn.ReLU(inplace=True),
                                 nn.Dropout(0.5),
-                                nn.Linear(256, 3))
+                                nn.Linear(256, num_classes))
 
     def proj_feat(self, x, hidden_size, feat_size):
         new_view = (x.size(0), *feat_size, hidden_size)
@@ -584,7 +687,7 @@ class TMSSNet(nn.Module):
         return x
 
     def forward(self, data):
-        img, cli = data['ct32'], data['clinical']
+        img, cli = data['image'], data['clinical']
         x = (img, cli)
         # print(x[0].shape, x[1].shape)
         # img_in, clin_in = x
@@ -661,16 +764,17 @@ class CLIP_TMSS_Net(nn.Module):
         return out, loss
 
 class CLIP_TMSS_NetV2(nn.Module):
-    def __init__(self, num_classes=3, clinical_length=8):
+    def __init__(self, num_classes=3, clinical_length=8, loss_weight=[1 - 0.5347, 1 - 0.2410, 1 - 0.1852 - 0.039], clip_loss_weight=0.5):
         super().__init__()
         self.CLIP = CLIP_C3_V3(embed_dim=128, hidden_size=768, transformer_heads=12, transformer_layers=6, clinical_length=clinical_length)
         self.att = MultiModalAtt()
         self.ca = ChannelAttention(in_channels=3)
         self.loss1 = ClipLoss()
-        self.weight = 0.5
+        # self.weight = 0.5
+        self.weight = clip_loss_weight
         # self.focal_loss_weight = [1 - 0.5347, 1 - 0.2410, 1 - 0.1852 - 0.039]
-        self.focal_loss_weight = [1 - 0.7076, 1 - 0.1725, 1 - 0.1052 - 0.0146] # CRDC
-        self.loss2 = FocalLoss(alpha=self.focal_loss_weight)
+        # self.focal_loss_weight = [1 - 0.7076, 1 - 0.1725, 1 - 0.1052 - 0.0146] # CRDC
+        self.loss2 = FocalLoss(alpha=loss_weight)
         self.classifier = nn.Sequential(
                                 nn.Linear(768, 256),
                                 nn.BatchNorm1d(256),
@@ -683,28 +787,33 @@ class CLIP_TMSS_NetV2(nn.Module):
 
     def forward(self, data):
         # ct128, ct32, bbox128, bbox32 = data['ct128'], data['ct32'], data['bbox128'], data['bbox32']
-        cosine_similarity, feats = self.CLIP(data)
-        # feats, _ = self.att(feats)
-        out = self.ca(feats)
-        # out = feats # no att
+        cosine_similarity, x = self.CLIP(data)
+        x, _ = self.att(x)
+        x = self.ca(x)
+        out = x # no att
         out = out.mean(dim=1)
         out = self.classifier(out)
-        loss1 = self.weight * self.loss1(cosine_similarity)
+        loss1 = self.loss1(cosine_similarity)
         loss2 = self.loss2(out, data['label'])
-        loss = 0.3 * loss1 + 0.7 * loss2
+
+        if self.weight > 1:
+            weight1 = loss1 / (loss1 + loss2)
+        else:
+            weight1 = self.weight
+        loss = weight1 * loss1 + (1-weight1) * loss2
         return out, loss
 
 class CLIP_TMSS_NetV3(nn.Module):
-    def __init__(self, num_classes=3, clinical_length=8):
+    def __init__(self, num_classes=3, clinical_length=8, loss_weight = [1 - 0.5347, 1 - 0.2410, 1 - 0.1852 - 0.039]):
         super().__init__()
         self.CLIP = CLIP_C3_V4(hidden_size=768, clinical_length=clinical_length)
         self.att = MultiModalAtt()
         self.ca = ChannelAttention(in_channels=3)
         self.loss1 = ClipLoss()
         self.weight = 0.5
-        self.focal_loss_weight = [1 - 0.5347, 1 - 0.2410, 1 - 0.1852 - 0.039]
+        # self.focal_loss_weight = [1 - 0.5347, 1 - 0.2410, 1 - 0.1852 - 0.039]
         # self.focal_loss_weight = [1 - 0.7076, 1 - 0.1725, 1 - 0.1052 - 0.0146] # CRDC
-        self.loss2 = FocalLoss(alpha=self.focal_loss_weight)
+        self.loss2 = FocalLoss(alpha=loss_weight)
         self.classifier = nn.Sequential(
                                 nn.Linear(768, 256),
                                 nn.BatchNorm1d(256),
@@ -718,15 +827,60 @@ class CLIP_TMSS_NetV3(nn.Module):
     def forward(self, data):
         # ct128, ct32, bbox128, bbox32 = data['ct128'], data['ct32'], data['bbox128'], data['bbox32']
         cosine_similarity, feats = self.CLIP(data)
-        feats, _ = self.att(feats)
-        out = self.ca(feats)
+        out = feats
+        # feats, _ = self.att(feats)
+        # out = self.ca(feats)
         # out = feats # no att
         out = out.mean(dim=1)
         out = self.classifier(out)
-        loss1 = self.weight * self.loss1(cosine_similarity)
-        loss2 = self.loss2(out, data['label'])
-        loss = 0.3 * loss1 + 0.7 * loss2
+        # loss1 = self.weight * self.loss1(cosine_similarity)
+        # loss2 = self.loss2(out, data['label'])
+        # loss = 0.3 * loss1 + 0.7 * loss2
+        loss = self.loss2(out, data['label'])
         return out, loss
+
+class CLIP_TMSS_NetV5(nn.Module):
+    def __init__(self, num_classes=3, clinical_length=8, loss_weight = [1 - 0.5347, 1 - 0.2410, 1 - 0.1852 - 0.039], clip_loss_weight=0.5):
+        super().__init__()
+        self.CLIP = CLIP_C3_V6(hidden_size=512, clinical_length=clinical_length)
+        self.att = MultiModalAtt(hidden_size=512, num_heads=8)
+        self.ca = ChannelAttention(in_channels=3)
+        self.loss1 = ClipLoss()
+        self.weight = clip_loss_weight
+        # self.focal_loss_weight = [1 - 0.5347, 1 - 0.2410, 1 - 0.1852 - 0.039]
+        # self.focal_loss_weight = [1 - 0.7076, 1 - 0.1725, 1 - 0.1052 - 0.0146] # CRDC
+        self.loss2 = FocalLoss(alpha=loss_weight)
+        self.classifier = nn.Sequential(
+                                nn.Linear(512, 256),
+                                nn.BatchNorm1d(256),
+                                nn.ReLU(inplace=True),
+                                nn.Dropout(0.5),
+                                nn.Linear(256, num_classes))
+    def update_loss_weight(self, loss_weigth):
+        self.focal_loss_weight = loss_weigth
+        self.loss2 = FocalLoss(alpha=self.focal_loss_weight)
+
+    def forward(self, data):
+        # ct128, ct32, bbox128, bbox32 = data['ct128'], data['ct32'], data['bbox128'], data['bbox32']
+        cosine_similarity, x = self.CLIP(data)
+        # print(feats)
+        # x, _ = self.att(x)
+        # x = self.ca(x)
+        out = x # no att
+        out = out.mean(dim=1)
+        out = self.classifier(out)
+        # loss1 = self.loss1(cosine_similarity)
+        # # print(loss1)
+        # loss2 = self.loss2(out, data['label'])
+        # if self.weight > 1:
+        #     weight1 = loss1 / (loss1 + loss2)
+        # else:
+        #     weight1 = self.weight
+        # loss = weight1 * loss1 + (1-weight1) * loss2
+        loss = self.loss2(out, data['label'])
+        return out, loss
+
+
 if __name__ == "__main__":
     from src.dataloader import split_pandas, LungDataset, DataLoader
     train_info, val_info = split_pandas('../configs/dataset.json')
@@ -760,7 +914,7 @@ if __name__ == "__main__":
     #         dropout_rate=0,
     #         spatial_dims=3,
     #     )
-    model = CLIP_TMSS_NetV3(num_classes=3, clinical_length=27).to("cuda")
+    model = CLIP_TMSS_NetV5(num_classes=3, clinical_length=27).to("cuda")
     # for name, param in model.named_parameters():
     #     print(name)
     for data in train_loader:

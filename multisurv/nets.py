@@ -280,7 +280,6 @@ class FC(nn.Module):
 
 class ClinicalNet(nn.Module):
     """Clinical data extractor.
-
     Handle continuous features and categorical feature embeddings.
     """
     def __init__(self, output_vector_size, embedding_dims=27):
@@ -288,36 +287,18 @@ class ClinicalNet(nn.Module):
         # Embedding layer
         # self.embedding_layers = nn.ModuleList([nn.Embedding(x, y)
         #                                        for x, y in embedding_dims])
-
         # n_embeddings = sum([y for x, y in embedding_dims])
         # n_continuous = 1
-
         # Linear Layers
         self.linear = nn.Linear(embedding_dims, 256)
-
         # Embedding dropout Layer
         self.embedding_dropout = nn.Dropout()
-
-        # Continuous feature batch norm layer
         self.bn_layer = nn.BatchNorm1d(1)
 
-        # Output Layer
         self.output_layer = FC(256, output_vector_size, 1)
 
     def forward(self, x):
-        # categorical_x, continuous_x = x
-        # categorical_x = categorical_x.to(torch.int64)
-
-        # x = [emb_layer(categorical_x[:, i])
-        #      for i, emb_layer in enumerate(self.embedding_layers)]
-        # x = torch.cat(x, 1)
-        # x = self.embedding_dropout(x)
-        # x = self.linear(x)
-        # continuous_x = self.bn_layer(continuous_x)
-        # x = self.bn_layer(x)
-        # x = torch.cat([x, continuous_x], 1)
         out = self.output_layer(self.linear(x))
-
         return out
 
 def generate_model(model_depth, **kwargs):

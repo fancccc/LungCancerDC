@@ -220,6 +220,8 @@ class ClipLoss(nn.Module):
     def get_ground_truth(self, device, num_logits) -> torch.Tensor:
         # 生成一个 [0, 1, 2, ..., num_logits-1] 的标签张量
         labels = torch.arange(num_logits, device=device, dtype=torch.long)
+        # labels = torch.randint(0, 2, (1, num_logits), device=device, dtype=torch.long)
+        # print(labels)
         return labels
 
     def forward(self, logits, output_dict=False):
@@ -245,14 +247,14 @@ if __name__ == '__main__':
     # # print(targets)
     # loss = FocalLoss3dMap()
     # print(loss(inputs, targets))
-
-    similarity_matrices = [torch.randn(10, 10) for _ in range(3)]  # 示例余弦相似度矩阵
+    clip = ClipLoss()
+    similarity_matrices = [[torch.randn(10, 10) for _ in range(2)]]  # 示例余弦相似度矩阵
     print(similarity_matrices)
-    labels = torch.randint(0, 3, (10,))  # 示例标签
+    labels = torch.randint(0, 3, (10, 1))  # 示例标签
 
     # 初始化损失函数
-    cosine_loss = CosineSimilarityLoss()
+    # cosine_loss = CosineSimilarityLoss()
 
     # 计算损失
-    loss = cosine_loss(similarity_matrices, labels)
+    loss = clip(similarity_matrices)
     print("Cosine Similarity Loss:", loss.item())

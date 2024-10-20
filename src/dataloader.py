@@ -228,6 +228,7 @@ class LungDataset(Dataset):
         self.data_dir = self.conf['data_dir']
         self.bids = df['bid'].tolist()
         self.phase = phase
+        self.use_flip = phase == 'train'
         self.labels = torch.tensor(df['label'].apply(lambda x: 2 if x == 3 else x).tolist(), dtype=torch.long)
         self.use_cli = use_cli
         self.use_bbox = use_bbox
@@ -288,6 +289,11 @@ class LungDataset(Dataset):
             slice = self.get_slice(i)
         if self.use_radiomics:
             radiomic = self.get_radiomic(i)
+        if self.use_flip:
+            if self.use_ct32:
+                ct32, bbox32 = self.random_flip(ct32, bbox32)
+            if self.use_ct128:
+                ct128, bbox128 = self.random_flip(ct128, bbox128)
         res = {'label': label, 'bid': bid, 'ct32': ct32, 'ct64': ct64, 'ct128': ct128,'ct256': ct256,
             'clinical': clinical, 'bbox': bbox, 'mask': mask, 'slice': slice, 'seg': seg, 'radiomics': radiomic,
                'bbox32': bbox32, 'bbox128': bbox128}
@@ -361,6 +367,29 @@ class LungDataset(Dataset):
             img = self.normalize(img)
         return torch.tensor(img, dtype=torch.float32).unsqueeze(0)
 
+    def random_flip(self, img, bbox):
+        # 随机选择翻转轴
+        flip_x = random.choice([True, False])
+        flip_y = random.choice([True, False])
+        flip_z = random.choice([True, False])
+
+        # 对图像进行翻转
+        if flip_x:
+            img = torch.flip(img, dims=[2])  # 翻转X轴 (第3个维度，index为2)
+            if self.use_bbox:
+                bbox[0] = 1 - bbox[3] - bbox[0]  # 反转X坐标 (标准化坐标，无需图像尺寸)
+
+        if flip_y:
+            img = torch.flip(img, dims=[1])  # 翻转Y轴 (第2个维度，index为1)
+            if self.use_bbox:
+                bbox[1] = 1 - bbox[4] - bbox[1]  # 反转Y坐标
+
+        if flip_z:
+            img = torch.flip(img, dims=[0])  # 翻转Z轴 (第1个维度，index为0)
+            if self.use_bbox:
+                bbox[2] = 1 - bbox[5] - bbox[2]  # 反转Z坐标
+
+        return img, bbox
     def normalize(self, img, MIN_BOUND=-1000.0, MAX_BOUND=400.0):
         img[img > MAX_BOUND] = MAX_BOUND
         img[img < MIN_BOUND] = MIN_BOUND

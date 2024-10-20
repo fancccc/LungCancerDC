@@ -299,29 +299,32 @@ class RadiomicsNet(nn.Module):
         x = self.classification(x.mean(dim=1).view(x.size(0), -1))
         return x
 
+from multisurv.nets import ClinicalNet
 class CliNet(nn.Module):
-    def __init__(self, num_classes=2, *args, **kwargs):
+    def __init__(self, num_classes=3, clinical_length=27):
         super(CliNet, self).__init__()
-        self.cli_encoder = TabularTransformer(
-                                            embed_dim=32,
-                                            context_length=27,
-                                            vocab_size=27,
-                                            transformer_width=768,
-                                            transformer_heads=12,
-                                            transformer_layers=6)
+        # self.cli_encoder = TabularTransformer(
+        #                                     embed_dim=32,
+        #                                     context_length=27,
+        #                                     vocab_size=27,
+        #                                     transformer_width=768,
+        #                                     transformer_heads=12,
+        #                                     transformer_layers=6)
+        self.cli_encoder = ClinicalNet(output_vector_size=512, embedding_dims=clinical_length)
         self.classification = nn.Sequential(
-            nn.Linear(768, 128),
-            nn.ReLU(),
-            nn.Linear(128, num_classes)
-        )
+                                nn.Linear(512, 256),
+                                nn.BatchNorm1d(256),
+                                nn.ReLU(inplace=True),
+                                nn.Dropout(0.5),
+                                nn.Linear(256, num_classes))
     def forward(self, data):
-        x = data['clinical'].unsqueeze(dim=-1)
+        x = data['clinical']#.unsqueeze(dim=-1)
         # print(x.shape)
-        x, _ = self.cli_encoder(x)
+        x = self.cli_encoder(x)
         # print(x.shape)
         if torch.isnan(x).any():
             print('NaN in radiomics_encoder', x)
-        x = self.classification(x.mean(dim=1).view(x.size(0), -1))
+        x = self.classification(x)
         return x
 class MCTAtt(nn.Module):
     def __init__(self, feat_dim, hidden_dim):
@@ -543,7 +546,7 @@ class ChannelAttention(nn.Module):
 
 if __name__ == '__main__':
     bbox = torch.tensor([0.1, 0.3, 0.2, 0.3, 0.2, 0.1]).unsqueeze(0).unsqueeze(-1)
-    EHR = torch.randn(1, 47).unsqueeze(-1)
+    EHR = torch.randn(1, 27)#.unsqueeze(-1)
     # net = BboxPrompt()
     # print(EHR.shape)
     radiomic = torch.randn(1, 107, 1)
@@ -555,6 +558,8 @@ if __name__ == '__main__':
     ct32 = torch.randn(1, 1, 32, 32, 32)
     seg = torch.randn(1, 1, 128, 128, 32)
     data = {'ct32' : ct32, 'ct128' : ct128, 'radiomics' : radiomic, 'clinical' : EHR, 'bbox' : bbox, 'seg' : seg}
+    net = CliNet()
+    print(net(data).shape)
     # # net = BCENet()
     # # out = net(img, bbox, EHR)
     # # print(out.shape)
@@ -563,11 +568,11 @@ if __name__ == '__main__':
     # net = SBCENet()
     # out = net(img, bbox, EHR, img)
     # print(out.shape)
-    net = RadiomicsNet()
-    out = net(data)
+    # net = RadiomicsNet()
+    # out = net(data)
     # ma = MultiHeadAttention(768, 768)
     # m1 = torch.randn(1, 8, 768)
     # m2 = torch.randn(1, 128, 768)
     # x = ma(m1, m2, m2)
-    print(out.shape)
+    # print(out.shape)
 
