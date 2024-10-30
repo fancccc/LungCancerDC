@@ -1,1 +1,13 @@
 results/
+*.log
+train.py
+train_bc.py
+train_bce.py
+train_cc.py
+train_ct_ehr.py
+train_ehr.py
+train_mctrebs.py
+train_old.py
+train_r.py
+train_sbce.py
+train_slices.py
