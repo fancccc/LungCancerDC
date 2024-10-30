@@ -11,3 +11,4 @@ train_old.py
 train_r.py
 train_sbce.py
 train_slices.py
+train_slice.py
