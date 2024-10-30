@@ -1,6 +1,8 @@
 # Deep Neural Network for Staging Adenocarcinoma via Multimodal Fusion of Lung CT Images, Coarse Annotation Bounding Boxes, and Electronic Health Records
 ![](fig/framework.png)
 
+Our model achieves a superior accuracy of 81.42\% and an area under the curve of 0.9120 on the validation set, significantly outperforming other recent multimodal classification methods.
+
 ## Datasets
 **The private LUNA-M dataset** collected from the Cancer Hospital & Shenzhen Hospital (Shenzhen, China). This dataset comprises 1,614 cases of lung adenocarcinoma from 1,430 anonymized patients, with each case including CT scans, clinical data, and bounding boxes identifying tumor locations. The cases are categorized into IA, MA, and AIS, with class proportions of 53.5\%, 24.1\%, and 22.4\%, respectively.
 
