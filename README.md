@@ -7,3 +7,6 @@
 **The open-source LPCD dataset** derived from [Lung-PET-CT-Dx](https://doi.org/10.7937/TCIA.2020.NNC2-0461), contains the same modalities as LUNA-M. It includes 342 lung cancer cases, categorized into adenocarcinoma, small cell carcinoma, large cell carcinoma, and squamous cell carcinoma. Due to the limited squamous cell cases, the large and squamous cell categories are merged, resulting in a three-class dataset with distributions of 70.7\%, 17.3\%, and 12.0\%, respectively. 
 
 ## train or evaluate
+train: `python train_clip.py --lr 0.001 --batch-size 24 --epochs 200 --phase train`
+
+eval: `python train_clip.py --lr 0.001 --batch-size 24 --epochs 200 --MODEL-WEIGTH model.pt --phase val`
