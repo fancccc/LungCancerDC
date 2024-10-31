@@ -1,4 +1,4 @@
-# Deep Neural Network for Staging Adenocarcinoma via Multimodal Fusion of Lung CT Images, Coarse Annotation Bounding Boxes, and Electronic Health Records
+# Deep Neural Network for Lung Adenocarcinoma Staging from Multimodal Fusion of Imaging and Clinical data
 ![](fig/framework.png)
 
 Our model achieves a superior accuracy of 81.42\% and an area under the curve of 0.9120 on the validation set, significantly outperforming other recent multimodal classification methods.
